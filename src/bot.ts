@@ -1,4 +1,4 @@
-import { Bot, Context } from "grammy";
+import { Bot, Context, GrammyError, HttpError } from "grammy";
 import * as dotenv from "dotenv";
 import { aboutHandler } from "./handlers/about";
 import { contactsHandler } from "./handlers/contacts";
@@ -14,19 +14,29 @@ if (!process.env.BOT_TOKEN) {
 
 export const bot = new Bot<Context>(process.env.BOT_TOKEN);
 
-bot.use(async (ctx, next) => {
-    console.log(`📩 Пришло сообщение: ${JSON.stringify(ctx.update, null, 2)}`);
-    await next(); // Передает управление дальше к командам
-});
-
-// Подключаем модули
+// Подключение модулей
 bot.use(commandsHandler);
 bot.use(aboutHandler);
 bot.use(contactsHandler);
 bot.use(pricesHandler);
 bot.use(faqHandler);
 
-// Ловим ошибки
+// --- ГЛАВНОЕ ИСПРАВЛЕНИЕ: Умная обработка ошибок ---
 bot.catch((err) => {
-    console.error("Error in bot:", err);
+    const ctx = err.ctx;
+    console.error(`Ошибка при обработке update ${ctx.update.update_id}:`);
+    const e = err.error;
+
+    if (e instanceof GrammyError) {
+        // Если ошибка "query is too old", мы её просто игнорируем
+        if (e.description.includes("query is too old")) {
+            console.warn("⚠️ Игнорируем дубликат запроса (query is too old)");
+            return; 
+        }
+        console.error("Error in request:", e.description);
+    } else if (e instanceof HttpError) {
+        console.error("Could not contact Telegram:", e);
+    } else {
+        console.error("Unknown error:", e);
+    }
 });
