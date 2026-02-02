@@ -5,6 +5,7 @@ import { contactsHandler } from "./handlers/contacts";
 import { pricesHandler } from "./handlers/prices";
 import { faqHandler } from "./handlers/faq";
 import { commandsHandler } from "./handlers/commans";
+import { distributionHandler } from "./handlers/distribution";
 
 dotenv.config();
 
@@ -14,7 +15,9 @@ if (!process.env.BOT_TOKEN) {
 
 export const bot = new Bot<Context>(process.env.BOT_TOKEN);
 
+
 // Подключение модулей
+bot.use(distributionHandler);
 bot.use(commandsHandler);
 bot.use(aboutHandler);
 bot.use(contactsHandler);
