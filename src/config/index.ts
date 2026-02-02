@@ -9,5 +9,5 @@ export const config = {
     botToken: process.env.BOT_TOKEN,
     sourceGroupId: Number(process.env.SOURCE_GROUP_ID),
     targetGroups: process.env.TARGET_GROUPS.split(",").map(id => Number(id.trim())),
-    phoneRegex: /(\+?[\d\-\(\)\s]{7,}\d)/
+    phoneRegex: /([+]?[\d\(\)\-\s]{7,}\d)/
 };
