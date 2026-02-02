@@ -120,7 +120,7 @@ export class LoadBalancer {
         try {
             const chat = await api.getChat(chatId);
             let title = "Неизвестный чат";
-            if ("title" in chat) title = chat.title || titler;
+            if ("title" in chat) title = chat.title || title;
             else if ("first_name" in chat) title = chat.first_name;
             
             this.groupTitles.set(chatId, title);
