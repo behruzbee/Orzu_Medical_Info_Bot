@@ -1,1 +1,33 @@
+# Зависимости
+node_modules/
+package-lock.json # (Опционально: обычно его оставляют, но если мешает — можно убрать. Лучше оставить)
+
+# Логи
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+logs
+*.log
+
+# Окружение и секреты (КРИТИЧЕСКИ ВАЖНО)
 .env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Сборка TypeScript
+dist/
+build/
+lib/
+*.tsbuildinfo
+
+# IDE и Система
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Vercel
+.vercel
