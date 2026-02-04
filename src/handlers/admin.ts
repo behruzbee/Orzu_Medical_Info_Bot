@@ -1,77 +1,78 @@
 import { Composer, Context } from "grammy";
 import { config } from "../config";
-// 👇 Импортируем ЭКЗЕМПЛЯР балансировщика, созданный в distribution.ts
-// Это важно, чтобы мы видели ту же статистику, что и распределитель
+// Импортируем экземпляр балансировщика
 import { balancer } from "./distribution"; 
 
 export const adminHandler = new Composer<Context>();
 
-// 🛡️ Middleware: Проверка на админа
-// Замените ID на свои, если их несколько
+// Массив ID администраторов
 const ADMIN_IDS = [6049496733]; 
 
+// Функция проверки прав
 const isAdmin = (ctx: Context) => {
     return ctx.from && ADMIN_IDS.includes(ctx.from.id);
 };
 
 // ===================== КОМАНДЫ =====================
 
-// 1. /ping — Проверка, жив ли бот (и сколько он уже работает без перезагрузки)
+// 1. /ping — Проверка аптайма
 adminHandler.command("ping", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
+    // balancer.startTime существует (мы добавили его в LoadBalancer)
     const uptime = Math.floor((new Date().getTime() - balancer.startTime.getTime()) / 1000);
     
     await ctx.reply(
         `🏓 **Понг! Бот активен.**\n` +
         `⏱ Аптайм: ${uptime} сек.\n` +
-        `🚀 Среда: Vercel/Serverless`, 
+        `🚀 База данных: MongoDB`, 
         { parse_mode: "Markdown" }
     );
 });
 
-// 2. /status — Краткая статистика в реальном времени
+// 2. /status — Краткая статистика
 adminHandler.command("status", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
-    const { nextTargetId } = balancer.getQueueStatus();
+    // 👇 ИСПРАВЛЕНИЕ: Используем новый метод getQueueStatusData()
+    const data = await balancer.getQueueStatusData();
     
     await ctx.reply(
-        `📊 **Статус системы:**\n\n` +
-        `✅ Обработано номеров: **${balancer.stats.totalRequests}**\n` +
-        `🎯 Следующая группа ID: \`${nextTargetId}\`\n` +
-        `👥 Всего целевых групп: **${config.targetGroups.length}**`,
+        `📊 **Статус (MongoDB):**\n\n` +
+        `📥 Всего заявок сегодня: **${data.totalToday}**\n` +
+        `⛔️ В остатке (сверх плана): **${data.overflow}**\n` +
+        `👥 Активных групп-целей: **${config.groupsConfig.length}**`,
         { parse_mode: "Markdown" }
     );
 });
 
-// 3. /last — Куда ушел последний номер (для разборок)
+// 3. /last — Последний распределенный номер
 adminHandler.command("last", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
-    const last = balancer.lastDistribution;
+    // 👇 ИСПРАВЛЕНИЕ: Используем метод getLastDistribution() вместо свойства lastDistribution
+    const last = await balancer.getLastDistribution();
     
     if (!last) {
-        return ctx.reply("ℹ️ С момента запуска распределений еще не было.");
+        return ctx.reply("ℹ️ Распределений еще не было.");
     }
 
     await ctx.reply(
-        `🕵️‍♂️ **Последнее распределение:**\n\n` +
+        `🕵️‍♂️ **Последняя заявка:**\n\n` +
         `📱 Номер: **${last.phone}**\n` +
-        `➡️ Группа ID: \`${last.targetId}\`\n` +
+        `➡️ Куда: **${last.targetName}**\n` +
         `🕒 Время: ${last.time}`,
         { parse_mode: "Markdown" }
     );
 });
 
-// 4. /report — Ручной запуск ежедневного отчета
+// 4. /report — Полный отчет
 adminHandler.command("report", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
-    await ctx.reply("⏳ Генерирую отчет, собираю названия групп...");
+    await ctx.reply("⏳ Генерирую отчет...");
     
     try {
-        // Передаем ctx.api, чтобы получить красивые названия групп вместо ID
         const reportText = await balancer.getDailyReport(ctx.api);
         await ctx.reply(reportText, { parse_mode: "Markdown" });
     } catch (e) {
@@ -79,28 +80,24 @@ adminHandler.command("report", async (ctx) => {
     }
 });
 
-// 5. /groups — Список всех групп в очереди с названиями
+// 5. /groups — Список планов
 adminHandler.command("groups", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
-    await ctx.reply("⏳ Загружаю список групп...");
+    // 👇 ИСПРАВЛЕНИЕ: Используем getGroupsList() вместо getQueueStatusWithNames()
+    const groups = await balancer.getGroupsList();
     
-    try {
-        const queue = await balancer.getQueueStatusWithNames(ctx.api);
-        let msg = "📋 **Целевые группы (Очередь):**\n\n";
-        
-        queue.forEach((item, index) => {
-            // 👉 показывает, чья сейчас очередь
-            msg += `${item.isNext ? "👉" : "#"} **${index + 1}. ${item.title}**\n`;
-        });
-        
-        await ctx.reply(msg, { parse_mode: "Markdown" });
-    } catch (e) {
-        await ctx.reply("❌ Ошибка получения списка: " + e);
-    }
+    let msg = "📋 **Настройки планов:**\n\n";
+    
+    // 👇 ИСПРАВЛЕНИЕ: Явно указываем тип item или позволяем TS вывести его из конфига
+    groups.forEach((g) => {
+        msg += `🔹 **${g.name}**: Лимит ${g.limit}\n`;
+    });
+    
+    await ctx.reply(msg, { parse_mode: "Markdown" });
 });
 
-// 6. /id — Узнать ID чата и свой ID (полезно для настройки .env)
+// 6. /id — Узнать ID чата
 adminHandler.command("id", async (ctx) => {
     await ctx.reply(
         `🆔 **ID этого чата:** \`${ctx.chat.id}\`\n` +
@@ -109,7 +106,7 @@ adminHandler.command("id", async (ctx) => {
     );
 });
 
-// 7. /source — Напоминание, какую группу мы слушаем
+// 7. /source — Источник заявок
 adminHandler.command("source", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
@@ -120,12 +117,11 @@ adminHandler.command("source", async (ctx) => {
     );
 });
 
-// 8. /check — Тест регулярного выражения
-// Пример: /check +998901234567
+// 8. /check — Тест номера
 adminHandler.command("check", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
-    const text = ctx.match as string; // Текст после команды
+    const text = ctx.match as string; 
     
     if (!text) {
         return ctx.reply("⚠️ Введите номер для проверки.\nПример: `/check +998901234567`", { parse_mode: "Markdown" });
@@ -136,34 +132,33 @@ adminHandler.command("check", async (ctx) => {
     if (match) {
         await ctx.reply(`✅ **Номер найден!**\nБот видит его как: \`${match[0]}\``, { parse_mode: "Markdown" });
     } else {
-        await ctx.reply(`❌ Номер не распознан. Проверьте формат или регулярку.`, { parse_mode: "Markdown" });
+        await ctx.reply(`❌ Номер не распознан.`, { parse_mode: "Markdown" });
     }
 });
 
-// 9. /admin — Проверка прав (видит ли бот вас как админа)
+// 9. /admin — Проверка прав
 adminHandler.command("admin", async (ctx) => {
     if (isAdmin(ctx)) {
         await ctx.reply("👨‍✈️ Вы распознаны как **Администратор**.");
     } else {
-        await ctx.reply("👤 Вы обычный пользователь (доступ к командам управления закрыт).");
+        await ctx.reply("👤 Вы обычный пользователь.");
     }
 });
 
-// 10. /help_admin — Список всех доступных команд
+// 10. /help_admin — Помощь
 adminHandler.command("help_admin", async (ctx) => {
     if (!isAdmin(ctx)) return;
     
     await ctx.reply(
         `🛠 **Команды Администратора:**\n\n` +
-        `/status - Статистика и очередь\n` +
-        `/report - Полный отчет за день\n` +
-        `/groups - Список целевых групп\n` +
-        `/last - Последний распределенный номер\n` +
+        `/status - Краткая сводка\n` +
+        `/report - Полный отчет выполнения плана\n` +
+        `/groups - Список лимитов по группам\n` +
+        `/last - Последний номер\n` +
         `/check <номер> - Тест распознавания\n` +
-        `/ping - Проверка активности\n` +
+        `/ping - Аптайм\n` +
         `/source - Группа-источник\n` +
-        `/id - Узнать ID чата\n` +
-        `/version - Версия бота`,
+        `/id - Узнать ID чата`,
         { parse_mode: "Markdown" }
     );
 });
@@ -171,9 +166,9 @@ adminHandler.command("help_admin", async (ctx) => {
 // 11. /version
 adminHandler.command("version", async (ctx) => {
     await ctx.reply(
-        "🤖 **Orzu Distrib Bot v2.0**\n" +
-        "Architecture: SOLID\n" +
-        "Platform: Vercel Serverless", 
+        "🤖 **Orzu Distrib Bot v2.1**\n" +
+        "Mode: Limits & Overflow\n" +
+        "DB: MongoDB", 
         { parse_mode: "Markdown" }
     );
 });
