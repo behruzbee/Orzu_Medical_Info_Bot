@@ -4,24 +4,28 @@ import { LoadBalancer } from "../services/load-balancer";
 
 export const distributionHandler = new Composer<Context>();
 
-// ⚠️ ЭКСПОРТИРУЕМ экземпляр, чтобы им пользовались admin.ts и cron.ts
+// Экспортируем экземпляр
 export const balancer = new LoadBalancer(config.targetGroups);
 
 distributionHandler.on("message", async (ctx) => {
-    // 1. Фильтр: только из группы-источника
     if (ctx.chat.id !== config.sourceGroupId) return;
 
     const text = ctx.message.text || ctx.message.caption;
     if (!text) return;
 
-    // 2. Поиск номера
     const match = text.match(config.phoneRegex);
 
     if (match) {
         const phone = match[0];
         
-        // 3. Получаем цель и пишем статистику
-        const targetGroupId = balancer.getNextTarget(phone); 
+        // 👇 ИЗМЕНЕНИЕ: getNextTarget может вернуть null (если все планы выполнены)
+        const targetGroupId = await balancer.getNextTarget(phone); 
+
+        // Если вернулся null — значит все группы полные, никуда не отправляем
+        if (targetGroupId === null) {
+            console.log(`⚠️ Лимит исчерпан. Номер ${phone} сохранен в "Остаток".`);
+            return;
+        }
 
         try {
             await ctx.copyMessage(targetGroupId);
