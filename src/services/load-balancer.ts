@@ -145,6 +145,7 @@ export class LoadBalancer {
                `📅 ${new Date().toLocaleDateString("ru-RU")}\n\n` +
                `📥 Всего заявок: **${grandTotal}**\n` +
                `✅ Распределено: **${totalSent}**\n` +
+               `⛔️ Дубликатов: **${duplicatePhones.length}**\n` +
                `⛔️ Остаток (сверх плана): **${totalOverflow}**\n\n` +
                `**Детализация:**\n` + groupsText + 
                `\n------------------` +
