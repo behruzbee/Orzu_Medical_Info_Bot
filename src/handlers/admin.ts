@@ -136,6 +136,19 @@ adminHandler.command("check", async (ctx) => {
     }
 });
 
+// 8. /getAllNumbers — Получить все номера
+adminHandler.command("getAllNumbers", async (ctx) => {
+    if (!isAdmin(ctx)) return;
+
+    const numbers = await balancer.getAllNumbers();
+    if (!numbers || numbers.length === 0) {
+        return ctx.reply("⚠️ Номера не найдены.", { parse_mode: "Markdown" });
+    }
+
+    const msg = numbers.map((n) => `- ${n}`).join("\n");
+    await ctx.reply(`📋 **Все номера:**\n\n${msg}`, { parse_mode: "Markdown" });
+});
+
 // 9. /admin — Проверка прав
 adminHandler.command("admin", async (ctx) => {
     if (isAdmin(ctx)) {

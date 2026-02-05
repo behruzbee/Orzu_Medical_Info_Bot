@@ -152,6 +152,12 @@ export class LoadBalancer {
                duplicatesSection; // 👈 Добавляем список в конец
     }
 
+    public async getAllNumbers(): Promise<string[]> {
+        await dbConnect();
+        const leads = await LeadModel.find().select("phone -_id");
+        return leads
+    }
+
     // --- Остальные методы (без изменений) ---
 
     public async getQueueStatusData() {
