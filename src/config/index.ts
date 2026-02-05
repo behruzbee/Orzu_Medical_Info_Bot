@@ -24,5 +24,5 @@ export const config = {
     sourceGroupId: sourceGroupId,
     targetGroups: targetIds, // Список ID для балансировщика
     groupsConfig: TARGET_GROUPS, // Полный конфиг с лимитами
-    phoneRegex: /([+]?[\d\(\)\-\s]{7,}\d)/
+    phoneRegex: /(?:\+|7|8|9)(?:[\d\(\)\-\s]{6,}\d)/g
 };
