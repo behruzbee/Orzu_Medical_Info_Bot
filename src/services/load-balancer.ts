@@ -152,10 +152,32 @@ export class LoadBalancer {
                duplicatesSection; // 👈 Добавляем список в конец
     }
 
-    public async getAllNumbers(): Promise<string[]> {
+    public async getAllNumbersGrouped(): Promise<Map<string, string[]>> {
         await dbConnect();
-        const leads = await LeadModel.find().select("phone -_id");
-        return leads
+        
+        // 1. Достаем все номера и дату создания, сортируем от новых к старым
+        const leads = await LeadModel.find()
+            .sort({ createdAt: -1 })
+            .select("phone createdAt -_id");
+
+        const grouped = new Map<string, string[]>();
+
+        // 2. Группируем
+        leads.forEach(lead => {
+            // Форматируем дату в строку "ДД.ММ.ГГГГ"
+            // Важно указать временную зону, чтобы дни считались корректно
+            const dateStr = new Date(lead.createdAt).toLocaleDateString("ru-RU", {
+                timeZone: "Asia/Tashkent" 
+            });
+
+            if (!grouped.has(dateStr)) {
+                grouped.set(dateStr, []);
+            }
+            
+            grouped.get(dateStr)?.push(lead.phone);
+        });
+
+        return grouped;
     }
 
     // --- Остальные методы (без изменений) ---

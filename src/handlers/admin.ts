@@ -136,17 +136,44 @@ adminHandler.command("check", async (ctx) => {
     }
 });
 
-// 8. /getAllNumbers — Получить все номера
+// 8. /getAllNumbers — Получить все номера с разбивкой по дням
 adminHandler.command("getAllNumbers", async (ctx) => {
     if (!isAdmin(ctx)) return;
 
-    const numbers = await balancer.getAllNumbers();
-    if (!numbers || numbers.length === 0) {
-        return ctx.reply("⚠️ Номера не найдены.", { parse_mode: "Markdown" });
+    // Вызываем новый метод (убедитесь, что название совпадает с тем, что в классе)
+    const groupedStats = await balancer.getAllNumbersGrouped();
+
+    if (groupedStats.size === 0) {
+        return ctx.reply("⚠️ База номеров пуста.", { parse_mode: "Markdown" });
     }
 
-    const msg = numbers.map((n) => `- ${n}`).join("\n");
-    await ctx.reply(`📋 **Все номера:**\n\n${msg}`, { parse_mode: "Markdown" });
+    let msg = "";
+    
+    // Проходимся по каждой дате
+    for (const [date, phones] of groupedStats) {
+        msg += `📅 **${date}** (Всего: ${phones.length})\n`;
+        
+        // Вариант 1: Каждый номер с новой строки (занимает много места)
+        msg += phones.map(p => `- \`${p}\``).join("\n");
+
+        // Вариант 2: Компактный список через запятую (рекомендуется)
+        // msg += phones.map(p => `\`${p}\``).join(", ");
+        
+        msg += "\n\n"; // Отступ между днями
+    }
+
+    // ВАЖНО: Telegram имеет лимит 4096 символов на сообщение.
+    // Если номеров очень много, нужно разбить сообщение.
+    if (msg.length > 4000) {
+        // Если текст слишком длинный, отправляем частями или как файл
+        // Здесь простой пример обрезки, но лучше реализовать отправку файла
+        const chunks = msg.match(/.{1,4000}/g) || [];
+        for (const chunk of chunks) {
+            await ctx.reply(chunk, { parse_mode: "Markdown" });
+        }
+    } else {
+        await ctx.reply(`📋 **Список номеров по дням:**\n\n${msg}`, { parse_mode: "Markdown" });
+    }
 });
 
 // 9. /admin — Проверка прав
