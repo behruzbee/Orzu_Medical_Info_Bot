@@ -13,16 +13,33 @@ export class LoadBalancer {
     }
 
     /**
-     * Возвращает ID группы для отправки.
-     * Возвращает NULL, если все планы выполнены (переполнение).
+     * 🛠 ВСПОМОГАТЕЛЬНЫЙ МЕТОД (Private)
+     * Возвращает точное время 00:00:00 сегодняшнего дня по Ташкенту.
+     * Используется везде, чтобы не дублировать код.
      */
-    public async getNextTarget(phone: string): Promise<number | null> {
+    private getTashkentStartOfDay(): Date {
+        const now = new Date();
+        const tashkentTimeStr = now.toLocaleString("en-US", { timeZone: "Asia/Tashkent" });
+        const tashkentDate = new Date(tashkentTimeStr);
+        
+        const yyyy = tashkentDate.getFullYear();
+        const mm = String(tashkentDate.getMonth() + 1).padStart(2, '0');
+        const dd = String(tashkentDate.getDate()).padStart(2, '0');
+        
+        // Возвращаем дату в формате ISO с явным указанием пояса +05:00
+        return new Date(`${yyyy}-${mm}-${dd}T00:00:00+05:00`);
+    }
+
+    /**
+     * Возвращает ID группы для отправки.
+     */
+    public async getNextTarget(phone: string, name: string = "", msgId: number = 0): Promise<number | null> {
         await dbConnect();
         
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
+        // 👇 ИСПОЛЬЗУЕМ ПРАВИЛЬНОЕ ВРЕМЯ
+        const startOfDay = this.getTashkentStartOfDay();
 
-        // 1. Считаем текущее распределение (исключая остаток)
+        // 1. Считаем текущее распределение
         const stats = await LeadModel.aggregate([
             { $match: { createdAt: { $gte: startOfDay }, targetGroupId: { $ne: 0 } } },
             { $group: { _id: "$targetGroupId", count: { $sum: 1 } } }
@@ -31,7 +48,7 @@ export class LoadBalancer {
         const countsMap = new Map<number, number>();
         stats.forEach(s => countsMap.set(s._id, s.count));
 
-        // 2. Фильтруем группы (только те, где план не выполнен)
+        // 2. Фильтруем группы
         const availableGroups = config.groupsConfig.filter(g => {
             const currentCount = countsMap.get(g.id) || 0;
             return currentCount < g.limit;
@@ -60,15 +77,19 @@ export class LoadBalancer {
             isOverflow = true;
         }
 
-        // 4. Проверяем дубликат
+        // 4. Проверяем дубликат (за сегодня по Ташкенту)
         const existingLead = await LeadModel.findOne({
             phone: phone,
             createdAt: { $gte: startOfDay }
         });
 
+        // Формируем ссылку на сообщение (если нужно)
+        // const msgLink = `https://t.me/c/${Math.abs(config.sourceGroupId).toString().substring(3)}/${msgId}`;
+
         // 5. Сохраняем
         await LeadModel.create({
             phone: phone,
+            name: name, // Если вы добавили поле name
             targetGroupId: targetId,
             isDuplicate: !!existingLead
         });
@@ -77,14 +98,15 @@ export class LoadBalancer {
     }
 
     /**
-     * Генерация отчета с именами дубликатов
+     * Генерация отчета
      */
     public async getDailyReport(api: Api<RawApi>): Promise<string> {
         await dbConnect();
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
 
-        // 1. Получаем общую статистику (цифры)
+        // 👇 ИСПОЛЬЗУЕМ ПРАВИЛЬНОЕ ВРЕМЯ
+        const startOfDay = this.getTashkentStartOfDay();
+
+        // 1. Статистика
         const stats = await LeadModel.aggregate([
             { $match: { createdAt: { $gte: startOfDay } } },
             {
@@ -96,20 +118,18 @@ export class LoadBalancer {
             }
         ]);
 
-        // 2. 👇 НОВОЕ: Получаем список конкретных номеров-дубликатов
+        // 2. Список дубликатов
         const duplicateDocs = await LeadModel.find({
             createdAt: { $gte: startOfDay },
             isDuplicate: true
         }).select("phone");
 
-        // Превращаем в массив строк: ["+99890...", "+99891..."]
         const duplicatePhones = duplicateDocs.map(doc => doc.phone);
 
         let totalSent = 0;
         let totalOverflow = 0;
         let groupsText = "";
 
-        // Формируем список по группам
         for (const groupConf of config.groupsConfig) {
             const stat = stats.find(s => s._id === groupConf.id);
             const count = stat ? stat.count : 0;
@@ -126,13 +146,11 @@ export class LoadBalancer {
             groupsText += `${statusIcon} **${groupConf.name}**: ${count} / ${groupConf.limit}${note}\n`;
         }
 
-        // Считаем остаток
         const overflowStat = stats.find(s => s._id === 0);
         if (overflowStat) totalOverflow = overflowStat.count;
 
         const grandTotal = totalSent + totalOverflow;
 
-        // Формируем блок текста со списком дублей
         let duplicatesSection = "";
         if (duplicatePhones.length > 0) {
             duplicatesSection = `\n🗑 **Список дубликатов (${duplicatePhones.length}):**\n` + 
@@ -142,30 +160,26 @@ export class LoadBalancer {
         }
 
         return `📊 **Отчет выполнения плана**\n` +
-               `📅 ${new Date().toLocaleDateString("ru-RU")}\n\n` +
+               `📅 ${new Date().toLocaleDateString("ru-RU", { timeZone: "Asia/Tashkent" })}\n\n` +
                `📥 Всего заявок: **${grandTotal}**\n` +
                `✅ Распределено: **${totalSent}**\n` +
                `♻️ Дубликатов: **${duplicatePhones.length}**\n` +
                `⛔️ Остаток (сверх плана): **${totalOverflow}**\n\n` +
                `**Детализация:**\n` + groupsText + 
                `\n------------------` +
-               duplicatesSection; // 👈 Добавляем список в конец
+               duplicatesSection;
     }
 
     public async getAllNumbersGrouped(): Promise<Map<string, string[]>> {
         await dbConnect();
         
-        // 1. Достаем все номера и дату создания, сортируем от новых к старым
         const leads = await LeadModel.find()
             .sort({ createdAt: -1 })
             .select("phone createdAt -_id");
 
         const grouped = new Map<string, string[]>();
 
-        // 2. Группируем
         leads.forEach(lead => {
-            // Форматируем дату в строку "ДД.ММ.ГГГГ"
-            // Важно указать временную зону, чтобы дни считались корректно
             const dateStr = new Date(lead.createdAt).toLocaleDateString("ru-RU", {
                 timeZone: "Asia/Tashkent" 
             });
@@ -180,12 +194,10 @@ export class LoadBalancer {
         return grouped;
     }
 
-    // --- Остальные методы (без изменений) ---
-
     public async getQueueStatusData() {
         await dbConnect();
-        const startOfDay = new Date();
-        startOfDay.setHours(0, 0, 0, 0);
+        // 👇 ИСПОЛЬЗУЕМ ПРАВИЛЬНОЕ ВРЕМЯ (тоже важно!)
+        const startOfDay = this.getTashkentStartOfDay();
 
         const totalToday = await LeadModel.countDocuments({ createdAt: { $gte: startOfDay } });
         const overflow = await LeadModel.countDocuments({ createdAt: { $gte: startOfDay }, targetGroupId: 0 });
@@ -193,6 +205,7 @@ export class LoadBalancer {
         return { totalToday, overflow };
     }
 
+    // ... остальные методы (getLastDistribution, getGroupsList) без изменений ...
     public async getLastDistribution() {
         await dbConnect();
         const last = await LeadModel.findOne().sort({ createdAt: -1 });
@@ -212,7 +225,7 @@ export class LoadBalancer {
             time: new Date(last.createdAt).toLocaleString("ru-RU", { timeZone: "Asia/Tashkent" })
         };
     }
-
+    
     public async getGroupsList() {
         return config.groupsConfig;
     }
