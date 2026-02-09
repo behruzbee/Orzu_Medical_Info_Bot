@@ -42,8 +42,9 @@ pricesHandler.callbackQuery(BotAction.PRICES, async (ctx) => {
         `— 2-местный: 4 620 000 сум\n\n` +
 
         `🏥 **Филиал "Фотима Султон"**\n` +
-        `— 2-местный: 6 400 000 сум\n` +
-        `— 3-местный: 5 900 000 сум`;
+        `— 2-местный: 6 900 000 сум\n` +
+        `— 3-местный: 6 300 000 сум \n` + 
+        `— 4-местный: 6 300 000 сум`;
 
     await ctx.reply(text, { reply_markup: backKeyboard, parse_mode: "Markdown" });
 });
