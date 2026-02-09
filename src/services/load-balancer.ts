@@ -2,6 +2,7 @@ import { Api, RawApi } from "grammy";
 import { dbConnect } from "../db/connect";
 import { StateModel, LeadModel } from "../db/models";
 import { config } from "../config";
+import { DateTime } from "luxon";
 
 // Интерфейс ответа для Handler'а
 export interface DistributionResult {
@@ -141,15 +142,42 @@ export class LoadBalancer {
     /**
      * Генерация отчета для админа (/report)
      */
-    public async getDailyReport(api: Api<RawApi>): Promise<string> {
+   private getTashkentTimeBounds(forYesterday: boolean = false) {
+        const now = new Date();
+        if (forYesterday) now.setDate(now.getDate() - 1);
+
+        // Формируем строку даты в поясе Ташкента
+        const formatter = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Tashkent",
+            year: "numeric",
+            month: "2-digit",
+            day: "2-digit",
+        });
+        
+        const datePart = formatter.format(now); // "YYYY-MM-DD"
+        
+        // Создаем границы. Важно: +05:00 говорит монге, что это время именно Ташкента
+        const start = new Date(`${datePart}T00:00:00+05:00`);
+        const end = new Date(`${datePart}T23:59:59+05:00`);
+
+        return { start, end, datePart };
+    }
+
+    /**
+     * ГЕНЕРАЦИЯ ОЧЕНЬ ПОДРОБНОГО ОТЧЕТА
+     */
+    public async getDailyReport(api: Api<RawApi>, forYesterday: boolean = true): Promise<string> {
         await dbConnect();
 
-        // Используем то же самое время начала дня
-        const startOfDay = this.getTashkentStartOfDay();
+        const { start, end, datePart } = this.getTashkentTimeBounds(forYesterday);
 
-        // 1. Агрегация статистики
+        // 1. Агрегация данных строго внутри периода
         const stats = await LeadModel.aggregate([
-            { $match: { createdAt: { $gte: startOfDay } } },
+            { 
+                $match: { 
+                    createdAt: { $gte: start, $lte: end } 
+                } 
+            },
             {
                 $group: {
                     _id: "$targetGroupId",
@@ -159,61 +187,52 @@ export class LoadBalancer {
             }
         ]);
 
-        // 2. Получаем список конкретных номеров-дубликатов
-        const duplicateDocs = await LeadModel.find({
-            createdAt: { $gte: startOfDay },
-            isDuplicate: true
-        }).select("phone");
+        // 2. Сбор всех номеров для детального анализа
+        const allLeads = await LeadModel.find({
+            createdAt: { $gte: start, $lte: end }
+        }).select("phone isDuplicate targetGroupId");
 
-        const duplicatePhones = duplicateDocs.map(doc => doc.phone);
+        const totalLeads = allLeads.length;
+        const uniqueLeads = allLeads.filter(l => !l.isDuplicate).length;
+        const duplicateLeads = allLeads.filter(l => l.isDuplicate).length;
+        const overflowLeads = allLeads.filter(l => l.targetGroupId === 0).length;
 
-        let totalSent = 0;
-        let totalOverflow = 0;
+        // 3. Формирование текста по группам
         let groupsText = "";
-
-        // Формируем текст по группам
         for (const groupConf of config.groupsConfig) {
             const stat = stats.find(s => s._id === groupConf.id);
             const count = stat ? stat.count : 0;
+            const progress = Math.min(100, (count / groupConf.limit) * 100).toFixed(0);
             
-            totalSent += count;
-
-            let statusIcon = "🔹"; 
-            let note = "";
-            if (count >= groupConf.limit) {
-                statusIcon = "✅";
-                note = " (Выполнено!)";
-            }
-
-            groupsText += `${statusIcon} **${groupConf.name}**: ${count} / ${groupConf.limit}${note}\n`;
+            let icon = count >= groupConf.limit ? "✅" : "⏳";
+            groupsText += `${icon} **${groupConf.name}**: ${count}/${groupConf.limit} (${progress}%)\n`;
         }
 
-        // Считаем остаток
-        const overflowStat = stats.find(s => s._id === 0);
-        if (overflowStat) totalOverflow = overflowStat.count;
+        // 4. Сбор списка дубликатов (красиво)
+        const dupesList = allLeads
+            .filter(l => l.isDuplicate)
+            .map(l => `\`${l.phone}\``)
+            .slice(0, 20); // Показываем первые 20, чтобы не спамить
 
-        const grandTotal = totalSent + totalOverflow;
+        const reportDate = new Date(start).toLocaleDateString("ru-RU", { 
+            timeZone: "Asia/Tashkent", day: 'numeric', month: 'long', year: 'numeric' 
+        });
 
-        // Блок со списком дублей
-        let duplicatesSection = "";
-        if (duplicatePhones.length > 0) {
-            // Используем Set, чтобы убрать визуальные повторы в списке, если один номер дублировали 5 раз
-            const uniqueDupes = [...new Set(duplicatePhones)];
-            duplicatesSection = `\n🗑 **Список дубликатов (${duplicatePhones.length}):**\n` + 
-                                uniqueDupes.map(p => `\`${p}\``).join(", ");
-        } else {
-            duplicatesSection = "\n✨ Дубликатов сегодня нет.";
-        }
-
-        return `📊 **Отчет выполнения плана**\n` +
-               `📅 ${new Date().toLocaleDateString("ru-RU", { timeZone: "Asia/Tashkent" })}\n\n` +
-               `📥 Всего заявок: **${grandTotal}**\n` +
-               `✅ Распределено: **${totalSent}**\n` +
-               `♻️ Дубликатов: **${duplicatePhones.length}**\n` +
-               `⛔️ Остаток (сверх плана): **${totalOverflow}**\n\n` +
-               `**Детализация:**\n` + groupsText + 
-               `\n------------------` +
-               duplicatesSection;
+        return `📊 **ПОДРОБНЫЙ ОТЧЕТ ПО ЛИДАМ**\n` +
+               `📅 Дата: **${reportDate}**\n` +
+               `⏱ Период: c 00:00 — до 00:00 (UZB)\n` +
+               `─────────────────────\n\n` +
+               `📈 **ОБЩАЯ СТАТИСТИКА**\n` +
+               `┣ Всего входящих: **${totalLeads}**\n` +
+               `┣ Уникальных: **${uniqueLeads}**\n` +
+               `┣ Повторных: **${duplicateLeads}**\n` +
+               `┗ В остатке: **${overflowLeads}**\n\n` +
+               `🏘 **РАСПРЕДЕЛЕНИЕ ПО ГРУППАМ**\n` +
+               `${groupsText}\n` +
+               `⚠️ **ДУБЛИКАТЫ (фрагмент):**\n` +
+               `${dupesList.length > 0 ? dupesList.join(", ") : "_Дублей не зафиксировано_"}\n\n` +
+               `─────────────────────\n` +
+               `🤖 _Автоматический отчет системы распределения_`;
     }
 
     /**
