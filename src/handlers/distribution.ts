@@ -6,36 +6,36 @@ import { LoadBalancer } from "../services/load-balancer";
 export const distributionHandler = new Composer<Context>();
 export const balancer = new LoadBalancer(config.targetGroups);
 
-// Функция очистки: убираем пробелы, скобки, тире. Оставляем только цифры и плюс.
 function cleanPhone(raw: string): string {
     return raw.replace(/[^\d+]/g, '');
 }
 
-distributionHandler.on("message", async (ctx) => {
+// ДОБАВИЛИ аргумент next 👇
+distributionHandler.on("message", async (ctx, next) => {
     // 1. Проверяем группу
-    if (ctx.chat.id !== config.sourceGroupId) return;
+    // Если ID чата не совпадает с группой-источником, мы передаем управление ДАЛЬШЕ
+    // к другим обработчикам (меню, команды и т.д.)
+    if (ctx.chat.id !== config.sourceGroupId) {
+        return next(); // 👈 ИСПРАВЛЕНО ЗДЕСЬ
+    }
 
     // 2. Собираем текст
     let textToScan = ctx.message.text || ctx.message.caption || "";
     
-    // Если это контакт, добавляем его номер в текст для проверки
     if (ctx.message.contact && ctx.message.contact.phone_number) {
         textToScan += " " + ctx.message.contact.phone_number;
     }
 
-    if (!textToScan) return;
+    if (!textToScan) return; // Тут можно оставить return, так как мы уже внутри целевой группы
 
-    // 3. Ищем ВСЕ совпадения (флаг 'g' в конфиге обязателен)
-    // Используем match или matchAll
+    // 3. Ищем ВСЕ совпадения
     const matches = textToScan.match(config.phoneRegex);
 
     if (!matches) return;
 
-    // Чтобы не обрабатывать один и тот же номер дважды в одном сообщении
     const uniqueNumbers = [...new Set(matches.map(m => cleanPhone(m)))];
 
     for (const rawPhone of uniqueNumbers) {
-        // Проверка на длину (чтобы отсечь короткие "обрывки" типа +7)
         if (rawPhone.length < 9) continue; 
 
         // 4. Вызываем балансировщик
@@ -44,13 +44,14 @@ distributionHandler.on("message", async (ctx) => {
         let replyText = "";
 
         if (result.isOverflow) {
-            // Если места нет
             replyText = `⛔️ **Лимит исчерпан!**\nНомер \`${rawPhone}\` сохранен в базу, но никуда не отправлен.`;
         } else {
-            // Пытаемся отправить
             try {
+                // ВАЖНО: copyMessage требует chat_id, откуда копировать.
+                // Если мы просто копируем сообщение в целевую группу:
                 if (result.targetId) {
-                    await ctx.copyMessage(result.targetId);
+                    // Используем copyMessage(куда, откуда, id_сообщения)
+                    await ctx.api.copyMessage(result.targetId, ctx.chat.id, ctx.message.message_id);
                 }
                 
                 replyText = `✅ **Принято:** \`${rawPhone}\`\n` + 
@@ -62,12 +63,10 @@ distributionHandler.on("message", async (ctx) => {
             }
         }
 
-        // 5. ДОБАВЛЯЕМ ИНФО О ДУБЛИКАТЕ (Если он есть)
         if (result.isDuplicate) {
             replyText += `\n\n⚠️ **ЭТО ДУБЛИКАТ!**\n${result.duplicateDetails}`;
         }
 
-        // 6. Отвечаем в чат
         await ctx.reply(replyText, { 
             parse_mode: "Markdown",
             reply_to_message_id: ctx.message.message_id 
