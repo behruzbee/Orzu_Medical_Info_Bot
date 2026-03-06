@@ -15,9 +15,13 @@ export async function dbConnect() {
   if (!cached.promise) {
     const opts = {
       bufferCommands: false,
+      // 👇 ДОБАВЛЕНО: Жесткие лимиты времени для Serverless (Vercel)
+      serverSelectionTimeoutMS: 5000, // Искать сервер не более 5 секунд
+      connectTimeoutMS: 5000,         // Ждать подключения не более 5 секунд
     };
 
     cached.promise = mongoose.connect(config.mongoUri, opts).then((mongoose) => {
+      console.log("✅ MongoDB успешно подключена");
       return mongoose;
     });
   }
@@ -26,6 +30,7 @@ export async function dbConnect() {
     cached.conn = await cached.promise;
   } catch (e) {
     cached.promise = null;
+    console.error("❌ Ошибка подключения к MongoDB:", e);
     throw e;
   }
 
