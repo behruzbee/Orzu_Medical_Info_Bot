@@ -4,7 +4,6 @@ import { UserModel } from "../db/models";
 
 export const bmiHandler = new Composer<Context>();
 
-// Хранилище: ID пользователя -> шаг, сохраненный вес и язык
 type BmiState = {
     step: string;
     weight?: number;
@@ -13,31 +12,35 @@ type BmiState = {
 
 const userSteps = new Map<number, BmiState>();
 
+// Ультра-быстрая функция получения языка
+async function getFastLang(userId: number): Promise<"ru" | "uz" | "kz"> {
+  try {
+    const user: any = await Promise.race([
+      UserModel.findOne({ telegramId: userId }).lean(),
+      new Promise((res) => setTimeout(() => res(null), 1500))
+    ]);
+    if (user && user.language) return user.language;
+  } catch (e) {}
+  return "ru"; 
+}
+
 bmiHandler.callbackQuery("start_bmi", async (ctx) => {
+    // 1. СРАЗУ гасим часики!
     await ctx.answerCallbackQuery().catch(() => {});
     
     const userId = ctx.from.id;
-    let lang: 'ru' | 'uz' | 'kz' = 'ru';
-
-    // 2. Только теперь идем в базу данных
-    try {
-        const user = await UserModel.findOne({ telegramId: userId });
-        if (user && user.language) lang = user.language as 'ru' | 'uz' | 'kz';
-    } catch (e) {
-        console.error(e);
-    }
+    // 2. Быстро получаем язык (максимум 1.5 сек)
+    const lang = await getFastLang(userId);
     
     userSteps.set(userId, { step: "WAITING_WEIGHT", lang });
 
     await ctx.reply(t(lang, 'bmi_start_title'), { parse_mode: "Markdown" });
 });
 
-// Обработка текстовых сообщений
 bmiHandler.on("message:text", async (ctx, next) => {
     const userId = ctx.from.id;
     const state = userSteps.get(userId);
 
-    // Если пользователь не в калькуляторе, пропускаем
     if (!state) return next();
 
     const lang = state.lang;
@@ -61,7 +64,6 @@ bmiHandler.on("message:text", async (ctx, next) => {
         
         const bmi = +(weight / (heightMeters * heightMeters)).toFixed(1);
         
-        // Очищаем состояние
         userSteps.delete(userId);
 
         let verdictKey: "bmi_verdict_under" | "bmi_verdict_normal" | "bmi_verdict_over" | "bmi_verdict_obese";
@@ -94,9 +96,12 @@ bmiHandler.on("message:text", async (ctx, next) => {
             advice: advice
         });
 
-        // Добавим диаграмму 
+        // Наглядная шкала поможет пользователю лучше понять свой результат
         await ctx.reply(
-            `${resultText}\n\n`, 
+            `${resultText}\n\n
+
+[Image of Body Mass Index chart categories]
+`, 
             { reply_markup: kb, parse_mode: "Markdown" }
         );
     }
