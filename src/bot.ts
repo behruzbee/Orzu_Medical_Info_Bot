@@ -23,8 +23,8 @@ export const bot = new Bot<Context>(process.env.BOT_TOKEN);
 // Подключение модулей
 bot.use(adminHandler);
 bot.use(distributionHandler);
-bot.use(commandsHandler);
 bot.use(diaryHandler)
+bot.use(commandsHandler);
 bot.use(aboutHandler);
 bot.use(contactsHandler);
 bot.use(pricesHandler);
