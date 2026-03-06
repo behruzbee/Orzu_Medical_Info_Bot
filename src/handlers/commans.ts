@@ -32,28 +32,40 @@ commandsHandler.command("start", async (ctx) => {
 
 // 2. Обработка нажатия на кнопку языка (🇷🇺, 🇺🇿, 🇰🇿)
 commandsHandler.callbackQuery(/set_lang_(ru|uz|kz)/, async (ctx) => {
-  // 1. СРАЗУ отвечаем Телеграму, чтобы он не слал повторные запросы
+  // 1. СРАЗУ отвечаем Телеграму
   await ctx.answerCallbackQuery().catch(() => {});
 
-  const selectedLang = ctx.match[1];
+  const selectedLang = ctx.match[1] as "ru" | "uz" | "kz";
   const userId = ctx.from.id;
+  // Защита: у некоторых пользователей скрыто имя, из-за этого бот мог падать
+  const firstName = ctx.from.first_name || "Гость"; 
 
-  // 2. Делаем тяжелые операции с БД
-  const user = await UserModel.findOneAndUpdate(
-    { telegramId: userId },
-    { language: selectedLang },
-    { upsert: true, new: true },
-  );
+  let isSubscribed = false;
 
-  // 3. Редактируем сообщение
-  await ctx.editMessageText(
-    // @ts-ignore
-    t(selectedLang, "welcome", { name: ctx.from.first_name }),
-    {
-      // @ts-ignore
-      reply_markup: generateMainKeyboard(user.isSubscribed, selectedLang),
-    },
-  );
+  // 2. Оборачиваем базу данных в try/catch!
+  // Если база зависнет, бот не умрет, а пойдет дальше.
+  try {
+    const user = await UserModel.findOneAndUpdate(
+      { telegramId: userId },
+      { telegramId: userId, firstName: firstName, language: selectedLang },
+      { upsert: true, new: true },
+    );
+    if (user) {
+        isSubscribed = user.isSubscribed;
+    }
+  } catch (error) {
+    console.error("❌ Ошибка БД при выборе языка:", error);
+    // Бот пойдет дальше даже при ошибке БД!
+  }
+
+  // 3. Формируем текст и клавиатуру
+  const welcomeText = t(selectedLang, "welcome", { name: firstName });
+
+  // 4. Обновляем сообщение (и тоже ловим возможные ошибки Телеграма)
+  await ctx.editMessageText(welcomeText, {
+    reply_markup: generateMainKeyboard(isSubscribed, selectedLang),
+    parse_mode: "Markdown",
+  }).catch((e) => console.error("❌ Ошибка при отрисовке меню:", e));
 });
 
 // 3. Возврат в главное меню по кнопке "Назад"
