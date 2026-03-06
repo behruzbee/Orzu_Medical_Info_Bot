@@ -49,3 +49,24 @@ diaryHandler.callbackQuery("unsubscribe_diary", async (ctx) => {
         }
     );
 });
+
+diaryHandler.callbackQuery("diary_task_done", async (ctx) => {
+    await ctx.answerCallbackQuery({
+        text: "🎉 Отличная работа! Так держать!",
+        show_alert: false // false означает, что это будет просто плашка сверху, а не окно
+    });
+
+    const successKb = new InlineKeyboard()
+        .text("✅ Задание выполнено. Вы молодец!", "dummy_callback"); // Кнопка-заглушка
+
+    // Обновляем клавиатуру у текущего сообщения
+    try {
+        await ctx.editMessageReplyMarkup({ reply_markup: successKb });
+    } catch (error) {
+        // Игнорируем ошибку, если пользователь нажал кнопку дважды слишком быстро
+    }
+});
+
+diaryHandler.callbackQuery("dummy_callback", async (ctx) => {
+    await ctx.answerCallbackQuery("Вы уже отметили это задание! 😉");
+});
