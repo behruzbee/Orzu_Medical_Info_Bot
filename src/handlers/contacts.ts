@@ -9,32 +9,43 @@ const ADMIN_ID = 6049496733;
 
 export const contactsHandler = new Composer<Context>();
 
+// Умная функция с жестким таймером
+const withTimeout = <T>(promise: Promise<T>, ms = 1500): Promise<T> => {
+    return Promise.race([
+      promise,
+      new Promise<T>((_, reject) =>
+        setTimeout(() => reject(new Error("Таймаут")), ms)
+      ),
+    ]);
+  };
+
 // Вспомогательная функция для безопасного получения данных пользователя
 async function getUserData(userId?: number) {
     if (!userId) return { isSubscribed: false, lang: 'ru' as const };
     try {
-        const user = await UserModel.findOne({ telegramId: userId });
+        const user: any = await withTimeout(UserModel.findOne({ telegramId: userId }).lean());
         if (user && user.language) {
             return { isSubscribed: user.isSubscribed, lang: user.language as 'ru' | 'uz' | 'kz' };
         }
-    } catch (e) { console.error(e); }
+    } catch (e) {}
     return { isSubscribed: false, lang: 'ru' as const };
 }
 
 // 1. Показываем адреса
 contactsHandler.callbackQuery(BotAction.CONTACTS, async (ctx) => {
-    await ctx.answerCallbackQuery();
+    // СРАЗУ гасим часики
+    await ctx.answerCallbackQuery().catch(() => {});
     const { lang } = await getUserData(ctx.from.id);
 
     await ctx.editMessageText(t(lang, 'contacts_text'), { 
         reply_markup: generateBackKeyboard(lang), 
         parse_mode: "Markdown" 
-    });
+    }).catch(() => {});
 });
 
 // 2. Обработчик кнопки "Связаться с оператором"
 contactsHandler.callbackQuery("contact_operator", async (ctx) => {
-    await ctx.answerCallbackQuery();
+    await ctx.answerCallbackQuery().catch(() => {});
     const { lang } = await getUserData(ctx.from.id);
 
     const btnText = t(lang, 'btn_send_contact');
@@ -42,7 +53,6 @@ contactsHandler.callbackQuery("contact_operator", async (ctx) => {
 
     await ctx.reply(msgText, {
         reply_markup: {
-            // Кнопка, запрашивающая контакт (native keyboard)
             keyboard: [[{ text: btnText, request_contact: true }]],
             resize_keyboard: true,
             one_time_keyboard: true,
@@ -59,19 +69,20 @@ contactsHandler.on(":contact", async (ctx) => {
     const username = ctx.from?.username ? `@${ctx.from.username}` : "нет юзернейма";
     const userId = ctx.from?.id;
 
+    // Тут можно подождать БД чуть дольше (3 сек), так как юзер ввел текст, а не нажал инлайн кнопку
     const { isSubscribed, lang } = await getUserData(userId);
 
     // 1. Уведомление пользователю
     await ctx.reply(t(lang, 'contact_received', { name, phone: phone || '' }), {
-        reply_markup: { remove_keyboard: true } // Убираем native кнопку
+        reply_markup: { remove_keyboard: true }
     });
 
-    // 2. Возвращаем главное меню на правильном языке
+    // 2. Возвращаем главное меню
     await ctx.reply(t(lang, 'main_menu_label'), { 
         reply_markup: generateMainKeyboard(isSubscribed, lang) 
     });
 
-    // 3. ОТПРАВКА ЗАЯВКИ АДМИНУ (На русском)
+    // 3. ОТПРАВКА ЗАЯВКИ АДМИНУ
     if (ADMIN_ID && phone) {
         try {
             await ctx.api.sendMessage(
