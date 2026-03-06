@@ -10,7 +10,7 @@ const withTimeout = <T>(promise: Promise<T>, ms = 3000): Promise<T> => {
   return Promise.race([
     promise,
     new Promise<T>((_, reject) =>
-      setTimeout(() => reject(new Error("Таймаут базы данных")), ms)
+      setTimeout(() => reject(new Error("Таймаут базы данных")), ms),
     ),
   ]);
 };
@@ -21,7 +21,9 @@ async function getUserData(userId?: number) {
 
   try {
     // Ищем пользователя, но ждем не дольше 3 секунд!
-    const user = await withTimeout(UserModel.findOne({ telegramId: userId }).lean());
+    const user = await withTimeout(
+      UserModel.findOne({ telegramId: userId }).lean(),
+    );
     if (user && user.language) {
       return {
         isSubscribed: user.isSubscribed,
@@ -42,40 +44,48 @@ commandsHandler.command("start", async (ctx) => {
 
 // 2. Обработка нажатия на кнопку языка (🇷🇺, 🇺🇿, 🇰🇿)
 commandsHandler.callbackQuery(/set_lang_(ru|uz|kz)/, async (ctx) => {
-  // 1. СРАЗУ отвечаем Телеграму
-  await ctx.answerCallbackQuery().catch(() => {});
-
-  const selectedLang = ctx.match[1] as "ru" | "uz" | "kz";
-  const userId = ctx.from.id;
-  const firstName = ctx.from.first_name || "Гость"; 
-
-  let isSubscribed = false;
-
   try {
-    // Записываем в БД, но даем на это максимум 3 секунды!
-    const dbQuery = UserModel.findOneAndUpdate(
+    // 1. Мгновенно гасим "часики" на кнопке
+    await ctx.answerCallbackQuery().catch(() => {});
+
+    const selectedLang = ctx.match[1] as "ru" | "uz" | "kz";
+    const userId = ctx.from.id;
+    const firstName = ctx.from.first_name || "Гость";
+
+    // 2. МГНОВЕННО обновляем меню на выбранный язык!
+    // Пока считаем, что подписки нет (isSubscribed: false), чтобы не ждать базу.
+    const welcomeText = t(selectedLang, "welcome", { name: firstName });
+
+    await ctx
+      .editMessageText(welcomeText, {
+        reply_markup: generateMainKeyboard(false, selectedLang),
+        parse_mode: "Markdown",
+      })
+      .catch((e) => console.error("❌ Ошибка отрисовки UI:", e));
+
+    // ==========================================
+    // ВСЁ, ПОЛЬЗОВАТЕЛЬ УЖЕ ВИДИТ МЕНЮ! 🚀
+    // ==========================================
+
+    // 3. Теперь спокойно пишем данные в базу (пока Vercel не закрыл процесс)
+    const user = await UserModel.findOneAndUpdate(
       { telegramId: userId },
       { telegramId: userId, firstName: firstName, language: selectedLang },
       { upsert: true, new: true },
-    ).lean();
+    ).maxTimeMS(3000); // Ждем БД максимум 3 секунды
 
-    const user = await withTimeout(dbQuery);
-    if (user) {
-        isSubscribed = user.isSubscribed;
+    // 4. Если оказалось, что пользователь БЫЛ подписан на дневник,
+    // мы просто "тихонько" меняем кнопку "Подписаться" на "Отписаться"
+    if (user && user.isSubscribed) {
+      await ctx
+        .editMessageReplyMarkup({
+          reply_markup: generateMainKeyboard(true, selectedLang),
+        })
+        .catch(() => {});
     }
-  } catch (error) {
-    console.error("⚠️ БД не ответила вовремя (set_lang):", error);
-    // Бот пойдет дальше даже если БД "отвалилась"!
+  } catch (err) {
+    console.error("❌ Глобальная ошибка в set_lang:", err);
   }
-
-  // 3. Формируем текст и клавиатуру
-  const welcomeText = t(selectedLang, "welcome", { name: firstName });
-
-  // 4. Обновляем сообщение
-  await ctx.editMessageText(welcomeText, {
-    reply_markup: generateMainKeyboard(isSubscribed, selectedLang),
-    parse_mode: "Markdown",
-  }).catch((e) => console.error("❌ Ошибка при отрисовке меню:", e));
 });
 
 // 3. Возврат в главное меню по кнопке "Назад"
@@ -91,8 +101,10 @@ commandsHandler.callbackQuery("back_main", async (ctx) => {
   });
 
   // Отрисовываем меню на правильном языке
-  await ctx.editMessageText(welcomeText, {
-    reply_markup: generateMainKeyboard(userData.isSubscribed, userData.lang),
-    parse_mode: "Markdown",
-  }).catch((e) => console.error("❌ Ошибка возврата в меню:", e));
+  await ctx
+    .editMessageText(welcomeText, {
+      reply_markup: generateMainKeyboard(userData.isSubscribed, userData.lang),
+      parse_mode: "Markdown",
+    })
+    .catch((e) => console.error("❌ Ошибка возврата в меню:", e));
 });
