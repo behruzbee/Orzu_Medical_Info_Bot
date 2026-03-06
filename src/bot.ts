@@ -7,6 +7,8 @@ import { faqHandler } from "./handlers/faq";
 import { commandsHandler } from "./handlers/commans";
 import { distributionHandler } from "./handlers/distribution";
 import { adminHandler } from "./handlers/admin";
+import { checkupHandler } from "./handlers/checkup";
+import { bmiHandler } from "./handlers/bmi";
 
 dotenv.config();
 
@@ -25,6 +27,8 @@ bot.use(aboutHandler);
 bot.use(contactsHandler);
 bot.use(pricesHandler);
 bot.use(faqHandler);
+bot.use(checkupHandler);
+bot.use(bmiHandler);
 
 // --- ГЛАВНОЕ ИСПРАВЛЕНИЕ: Умная обработка ошибок ---
 bot.catch((err) => {

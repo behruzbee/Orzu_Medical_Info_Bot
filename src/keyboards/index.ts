@@ -4,10 +4,12 @@ import { BotAction } from "../types/enums";
 // Главное меню
 export const mainKeyboard = new InlineKeyboard()
     .text("🏥 О клинике и Методика", BotAction.ABOUT).row()
-    .text("💰 Актуальный Прайс-лист", BotAction.PRICES).row() // Обновили название
+    .text("💰 Актуальный Прайс-лист", BotAction.PRICES).row()
     .text("📍 Филиалы и Адреса", BotAction.CONTACTS).row()
     .text("❓ Частые вопросы и Услуги", BotAction.FAQ).row()
-    .text("📞 Связаться с оператором", "contact_operator").row() // Кнопка высокой конверсии
+    .text("🩺 Тест: Пора ли в санаторий?", "start_checkup").row() // НОВАЯ КНОПКА
+    .text("⚖️ Калькулятор ИМТ", "start_bmi").row()              // НОВАЯ КНОПКА
+    .text("📞 Связаться с оператором", "contact_operator").row()
     .url("🌐 Наш сайт", "https://orzumedical.uz")
     .url("📚 Читать книгу онлайн", "https://orzu-medical-electron-book.vercel.app/");
 
