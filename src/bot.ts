@@ -9,6 +9,7 @@ import { distributionHandler } from "./handlers/distribution";
 import { adminHandler } from "./handlers/admin";
 import { checkupHandler } from "./handlers/checkup";
 import { bmiHandler } from "./handlers/bmi";
+import { diaryHandler } from "./handlers/diary";
 
 dotenv.config();
 
@@ -23,6 +24,7 @@ export const bot = new Bot<Context>(process.env.BOT_TOKEN);
 bot.use(adminHandler);
 bot.use(distributionHandler);
 bot.use(commandsHandler);
+bot.use(diaryHandler)
 bot.use(aboutHandler);
 bot.use(contactsHandler);
 bot.use(pricesHandler);

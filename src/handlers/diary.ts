@@ -1,112 +1,101 @@
-import { Composer, Context, InlineKeyboard } from "grammy";
-import { UserModel } from "../db/models";
+import { Composer, InlineKeyboard } from "grammy";
+import { UserModel } from "../db/models"; 
 import { t } from "../locales";
 
-export const diaryHandler = new Composer<Context>();
+export const diaryHandler = new Composer();
 
-async function getFastLang(userId: number): Promise<"ru" | "uz" | "kz"> {
-  try {
-    const user: any = await Promise.race([
-      UserModel.findOne({ telegramId: userId }).lean(),
-      new Promise((res) => setTimeout(() => res(null), 1500)),
-    ]);
-    if (user && user.language) return user.language;
-  } catch (e) {}
-  return "ru";
+/**
+ * Ультра-быстрая функция получения языка.
+ * Ждем ответа от БД максимум 1 секунду, чтобы не повесить Vercel.
+ */
+async function getFastLang(userId: number): Promise<'ru' | 'uz' | 'kz'> {
+    try {
+        const user: any = await Promise.race([
+            UserModel.findOne({ telegramId: userId }).lean(),
+            new Promise((res) => setTimeout(() => res(null), 1000))
+        ]);
+        if (user && user.language) return user.language as 'ru' | 'uz' | 'kz';
+    } catch (e) {
+        console.error("FastLang Error:", e);
+    }
+    return 'ru'; // По умолчанию русский
 }
 
-// 1. Подписка
+// 1. ПОДПИСКА НА ДНЕВНИК
 diaryHandler.callbackQuery("subscribe_diary", async (ctx) => {
-  // Мгновенно гасим часики
-  await ctx.answerCallbackQuery().catch(() => {});
+    // Мгновенно убираем анимацию загрузки на кнопке
+    await ctx.answerCallbackQuery().catch(() => {});
+    
+    const userId = ctx.from.id;
+    const firstName = ctx.from.first_name || "Гость";
+    const lang = await getFastLang(userId);
 
-  const userId = ctx.from.id;
-  const firstName = ctx.from.first_name || "Гость";
-  const lang = await getFastLang(userId);
+    // СНАЧАЛА обновляем интерфейс (пользователь сразу видит результат)
+    const kb = new InlineKeyboard()
+        .text(t(lang, 'btn_unsub_diary'), "unsubscribe_diary").row()
+        .text(t(lang, 'btn_back_menu'), "back_main");
 
-  // Сначала меняем интерфейс (Optimistic UI), чтобы юзер не ждал
-  const kb = new InlineKeyboard()
-    .text(t(lang, "btn_unsub_diary"), "unsubscribe_diary")
-    .row()
-    .text(t(lang, "btn_back_menu"), "back_main");
+    await ctx.editMessageText(t(lang, 'diary_sub_success'), { 
+        reply_markup: kb, 
+        parse_mode: "Markdown" 
+    }).catch(() => {});
 
-  await ctx
-    .editMessageText(t(lang, "diary_sub_success"), {
-      reply_markup: kb,
-      parse_mode: "Markdown",
-    })
-    .catch(() => {});
-
-  // Теперь спокойно записываем в базу в фоне
-  try {
-    await UserModel.updateOne(
-      { telegramId: userId },
-      {
-        $set: {
-          isSubscribed: true,
-          firstName: firstName,
+    // ЗАТЕМ в фоновом режиме обновляем БД
+    UserModel.updateOne(
+        { telegramId: userId },
+        { 
+            $set: { 
+                isSubscribed: true, 
+                firstName: firstName 
+            } 
         },
-      },
-      { upsert: true },
-    ).maxTimeMS(2000);
-  } catch (error) {
-    console.error("Ошибка записи подписки в БД:", error);
-  }
+        { upsert: true }
+    ).exec().catch(err => console.error("DB Update Error (Sub):", err));
 });
 
-// 2. Отписка
+// 2. ОТПИСКА ОТ ДНЕВНИКА
 diaryHandler.callbackQuery("unsubscribe_diary", async (ctx) => {
-  await ctx.answerCallbackQuery().catch(() => {});
+    await ctx.answerCallbackQuery().catch(() => {});
+    
+    const userId = ctx.from.id;
+    const lang = await getFastLang(userId);
 
-  const userId = ctx.from.id;
-  const lang = await getFastLang(userId);
+    // Мгновенно меняем текст
+    await ctx.editMessageText(t(lang, 'diary_unsub_success'), { 
+        reply_markup: new InlineKeyboard().text(t(lang, 'btn_back_menu'), "back_main"),
+        parse_mode: "Markdown" 
+    }).catch(() => {});
 
-  // Сразу меняем текст
-  await ctx
-    .editMessageText(t(lang, "diary_unsub_success"), {
-      reply_markup: new InlineKeyboard().text(
-        t(lang, "btn_back_menu"),
-        "back_main",
-      ),
-      parse_mode: "Markdown",
-    })
-    .catch(() => {});
-
-  // Обновляем БД в фоне
-  try {
-    await UserModel.updateOne(
-      { telegramId: userId },
-      { $set: { isSubscribed: false } },
-    ).maxTimeMS(2000);
-  } catch (e) {
-    console.error("Ошибка отписки в БД:", e);
-  }
+    // Обновляем БД в фоне
+    UserModel.updateOne(
+        { telegramId: userId },
+        { $set: { isSubscribed: false } }
+    ).exec().catch(err => console.error("DB Update Error (Unsub):", err));
 });
-// 3. Выполнение задания
+
+// 3. КНОПКА ВЫПОЛНЕНИЯ ЗАДАНИЯ (из утренней рассылки)
 diaryHandler.callbackQuery("diary_task_done", async (ctx) => {
-  // Всплывашка!
-  const lang = await getFastLang(ctx.from.id);
-  await ctx
-    .answerCallbackQuery({
-      text: t(lang, "toast_task_done"),
-      show_alert: false,
-    })
-    .catch(() => {});
+    const lang = await getFastLang(ctx.from.id);
 
-  const successKb = new InlineKeyboard().text(
-    t(lang, "btn_task_done"),
-    "dummy_callback",
-  );
+    // Всплывающее уведомление сверху экрана
+    await ctx.answerCallbackQuery({
+        text: t(lang, 'toast_task_done'),
+        show_alert: false
+    }).catch(() => {});
 
-  try {
-    await ctx.editMessageReplyMarkup({ reply_markup: successKb });
-  } catch (error) {}
+    // Меняем кнопку на "Выполнено"
+    const successKb = new InlineKeyboard()
+        .text(t(lang, 'btn_task_done'), "dummy_callback"); 
+
+    try {
+        await ctx.editMessageReplyMarkup({ reply_markup: successKb });
+    } catch (error) {
+        // Игнорируем, если сообщение уже удалено или изменено
+    }
 });
 
-// 4. Заглушка
+// 4. ЗАГЛУШКА (если нажали на уже выполненное задание)
 diaryHandler.callbackQuery("dummy_callback", async (ctx) => {
-  const lang = await getFastLang(ctx.from.id);
-  await ctx
-    .answerCallbackQuery(t(lang, "toast_task_already_done"))
-    .catch(() => {});
+    const lang = await getFastLang(ctx.from.id);
+    await ctx.answerCallbackQuery(t(lang, 'toast_task_already_done')).catch(() => {});
 });
