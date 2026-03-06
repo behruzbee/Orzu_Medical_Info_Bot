@@ -1,75 +1,69 @@
-// handlers/checkup.ts
 import { Composer, Context, InlineKeyboard } from "grammy";
-import { mainKeyboard } from "../keyboards";
+import { t } from "../locales";
+import { UserModel } from "../db/models";
 
 export const checkupHandler = new Composer<Context>();
 
-// Старт теста
+// Вспомогательная функция для получения языка пользователя
+async function getUserLang(userId: number): Promise<'ru' | 'uz' | 'kz'> {
+    try {
+        const user = await UserModel.findOne({ telegramId: userId });
+        if (user && user.language) return user.language as 'ru' | 'uz' | 'kz';
+    } catch (e) {
+        console.error("Ошибка при получении языка в checkup:", e);
+    }
+    return 'ru'; // По умолчанию
+}
+
+// Старт теста (Вопрос 1)
 checkupHandler.callbackQuery("start_checkup", async (ctx) => {
     await ctx.answerCallbackQuery();
-    const kb = new InlineKeyboard()
-        .text("Да, сплю плохо/не высыпаюсь", "chk_2_1").row()
-        .text("Нет, сплю отлично", "chk_2_0");
+    const lang = await getUserLang(ctx.from.id);
 
-    await ctx.editMessageText(
-        "🩺 **Шаг 1 из 3: Как вы оцениваете свой сон?**\n\n" +
-        "Часто ли вы просыпаетесь разбитым или страдаете бессонницей?",
-        { reply_markup: kb, parse_mode: "Markdown" }
-    );
+    const kb = new InlineKeyboard()
+        .text(t(lang, 'chk_a1_1'), "chk_2_1").row()
+        .text(t(lang, 'chk_a1_2'), "chk_2_0");
+
+    await ctx.editMessageText(t(lang, 'chk_q1'), { reply_markup: kb, parse_mode: "Markdown" });
 });
 
 // Второй вопрос
 checkupHandler.callbackQuery(/chk_2_(\d+)/, async (ctx) => {
     await ctx.answerCallbackQuery();
+    const lang = await getUserLang(ctx.from.id);
     const score = parseInt(ctx.match[1]); // Достаем баллы из предыдущего ответа
     
     const kb = new InlineKeyboard()
-        .text("Часто болит спина/суставы", `chk_3_${score + 1}`).row()
-        .text("Ничего не беспокоит", `chk_3_${score}`);
+        .text(t(lang, 'chk_a2_1'), `chk_3_${score + 1}`).row()
+        .text(t(lang, 'chk_a2_2'), `chk_3_${score}`);
 
-    await ctx.editMessageText(
-        "🩺 **Шаг 2 из 3: Беспокоят ли вас боли?**\n\n" +
-        "Чувствуете ли вы тяжесть в спине, шее или боли в суставах к концу дня?",
-        { reply_markup: kb, parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText(t(lang, 'chk_q2'), { reply_markup: kb, parse_mode: "Markdown" });
 });
 
 // Третий вопрос
 checkupHandler.callbackQuery(/chk_3_(\d+)/, async (ctx) => {
     await ctx.answerCallbackQuery();
+    const lang = await getUserLang(ctx.from.id);
     const score = parseInt(ctx.match[1]);
     
     const kb = new InlineKeyboard()
-        .text("Постоянный стресс и усталость", `chk_res_${score + 1}`).row()
-        .text("Я полон(на) энергии", `chk_res_${score}`);
+        .text(t(lang, 'chk_a3_1'), `chk_res_${score + 1}`).row()
+        .text(t(lang, 'chk_a3_2'), `chk_res_${score}`);
 
-    await ctx.editMessageText(
-        "🩺 **Шаг 3 из 3: Уровень энергии**\n\n" +
-        "Часто ли вы испытываете стресс, раздражительность или хроническую усталость?",
-        { reply_markup: kb, parse_mode: "Markdown" }
-    );
+    await ctx.editMessageText(t(lang, 'chk_q3'), { reply_markup: kb, parse_mode: "Markdown" });
 });
 
 // Результат
 checkupHandler.callbackQuery(/chk_res_(\d+)/, async (ctx) => {
     await ctx.answerCallbackQuery();
+    const lang = await getUserLang(ctx.from.id);
     const score = parseInt(ctx.match[1]);
-    let resultText = "";
 
-    if (score >= 2) {
-        resultText = "🚨 **Результат: Вашему организму срочно нужна перезагрузка!**\n\n" +
-                     "Симптомы указывают на накопившуюся усталость и, возможно, зашлакованность организма. " +
-                     "Курс детоксикации в **Orzu Medical** поможет вам вернуть глубокий сон, легкость в теле и энергию.\n\n" +
-                     "💡 _Рекомендуем обратить внимание на филиалы с кедровыми бочками и релакс-процедурами (например, Паркент или Юнусабад)._";
-    } else {
-        resultText = "✅ **Результат: Вы в отличной форме!**\n\n" +
-                     "Продолжайте заботиться о себе. Но помните, что профилактика — лучшее лечение. " +
-                     "Приезжайте к нам просто отдохнуть на пару дней, подышать свежим воздухом и сходить на массаж!";
-    }
+    const resultText = score >= 2 ? t(lang, 'chk_res_bad') : t(lang, 'chk_res_good');
 
     const kb = new InlineKeyboard()
-        .text("📞 Проконсультироваться", "contact_operator").row()
-        .text("🔙 В главное меню", "back_main");
+        .text(t(lang, 'btn_consult'), "contact_operator").row()
+        .text(t(lang, 'btn_back_menu'), "back_main");
 
     await ctx.editMessageText(resultText, { reply_markup: kb, parse_mode: "Markdown" });
 });

@@ -1,46 +1,32 @@
 import { Composer, Context } from "grammy";
 import { BotAction } from "../types/enums";
-import { backKeyboard } from "../keyboards";
+import { generateBackKeyboard } from "../keyboards";
+import { t } from "../locales";
+import { UserModel } from "../db/models";
 
 export const pricesHandler = new Composer<Context>();
 
+// Вспомогательная функция для получения языка пользователя
+async function getUserLang(userId: number): Promise<'ru' | 'uz' | 'kz'> {
+    try {
+        const user = await UserModel.findOne({ telegramId: userId });
+        if (user && user.language) return user.language as 'ru' | 'uz' | 'kz';
+    } catch (e) {
+        console.error("Ошибка при получении языка в prices:", e);
+    }
+    return 'ru'; // По умолчанию
+}
+
 pricesHandler.callbackQuery(BotAction.PRICES, async (ctx) => {
     await ctx.answerCallbackQuery();
+    const lang = await getUserLang(ctx.from.id);
 
-    const text =
-        `💰 **Стоимость путевки (Курс 10 дней)**\n` +
-        `_Цена указана за 1 человека. Включено проживание, питание и ВСЕ процедуры._\n\n` +
-        
-        `📍 **Филиал "Юнусабад" (г. Ташкент)**\n` +
-        `• Палаты (201-211): **5 900 000 сум**\n` +
-        `• Палаты (301-401): **5 500 000 сум**\n\n` +
+    // Берем переведенный текст цен из словаря
+    const text = t(lang, 'prices_text');
 
-        `📍 **Филиал "Фотима Султон"**\n` +
-        `• 2-местная палата: **6 900 000 сум**\n` +
-        `• 3- и 4-местные: **6 300 000 сум**\n\n` +
-
-        `📍 **Филиал "Зангиота"**\n` +
-        `• 2-местная палата: **5 720 000 сум**\n` +
-        `• 3- и 4-местные: **5 300 000 сум**\n\n` +
-
-        `📍 **Филиал "Аккурган"**\n` +
-        `• Стандарт: **4 800 000 сум**\n` +
-        `• Люкс: **5 570 000 сум**\n` +
-        `_(Для иностранных граждан: 5 100 000 сум)_\n\n` +
-
-        `📍 **Филиал "Паркент"**\n` +
-        `• 1-местная палата: **4 840 000 сум**\n` +
-        `• 2-местная палата: **4 620 000 сум**\n` +
-        `• 3-местная палата: **4 350 000 сум**\n` +
-        `• 4-местная палата: **4 070 000 сум**\n\n` +
-
-        `📍 **Филиал "Янги Базар"**\n` +
-        `• 2-местная палата: **4 620 000 сум**\n` +
-        `• 3-местная палата: **4 350 000 сум**\n` +
-        `• 4-местная палата: **4 070 000 сум**\n\n` +
-
-        `📍 **Филиал "Насиба Бону" (Чиназ)**\n` +
-        `• 2, 3 и 4-местные: **4 150 000 сум**`;
-
-    await ctx.reply(text, { reply_markup: backKeyboard, parse_mode: "Markdown" });
+    // Используем editMessageText для плавного обновления экрана
+    await ctx.editMessageText(text, { 
+        reply_markup: generateBackKeyboard(lang), 
+        parse_mode: "Markdown" 
+    });
 });

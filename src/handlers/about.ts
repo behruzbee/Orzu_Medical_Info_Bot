@@ -1,27 +1,30 @@
 import { Composer, Context } from "grammy";
 import { BotAction } from "../types/enums";
-import { backKeyboard } from "../keyboards";
+import { generateBackKeyboard } from "../keyboards";
+import { t } from "../locales"; // Путь до словаря
+import { UserModel } from "../db/models";
 
 export const aboutHandler = new Composer<Context>();
 
 aboutHandler.callbackQuery(BotAction.ABOUT, async (ctx) => {
   await ctx.answerCallbackQuery();
 
-  const text =
-    `🏥 **Orzu Medical — Возвращаем здоровье без таблеток**\n\n` +
-    `Мы работаем с **1997 года** и за это время помогли тысячам людей вернуть радость полноценной жизни. У истоков клиники стоят врач с 50-летним стажем Рустамова Арзигул и Адилбеков Баходир.\n\n` +
-    `🌿 **В чем наш секрет?**\n` +
-    `Мы не "глушим" симптомы. Мы устраняем корень болезней через **глубокое очищение организма** (печени, кишечника, сосудов) от накопившихся токсинов, шлаков и солей.\n\n` +
-    `✨ **Как мы лечим:**\n` +
-    `• Лечебное голодание и персональная диета\n` +
-    `• Древние рецепты фитотерапии Ибн Сины\n` +
-    `• Озоно- и лазеротерапия\n` +
-    `• Гирудотерапия и лечение пчелиным ядом\n` +
-    `• Релакс: кедровые бочки и соляные пещеры\n\n` +
-    `📖 Узнайте больше в нашей книге: [Читать онлайн](https://orzu-medical-electron-book.vercel.app/)`;
+  const userId = ctx.from.id;
+  let lang: 'ru' | 'uz' | 'kz' = 'ru';
 
-  await ctx.reply(text, {
+  try {
+      const user = await UserModel.findOne({ telegramId: userId });
+      if (user && user.language) {
+          lang = user.language as 'ru' | 'uz' | 'kz';
+      }
+  } catch (error) {
+      console.error("Ошибка при получении языка в about:", error);
+  }
+
+  const text = t(lang, 'about_text');
+
+  await ctx.editMessageText(text, {
     parse_mode: "Markdown",
-    reply_markup: backKeyboard,
+    reply_markup: generateBackKeyboard(lang),
   });
 });

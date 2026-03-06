@@ -18,7 +18,8 @@ const leadSchema = new Schema({
 const userSchema = new Schema({
     telegramId: { type: Number, required: true, unique: true },
     firstName: { type: String },
-    isSubscribed: { type: Boolean, default: false }
+    isSubscribed: { type: Boolean, default: false },
+    language: { type: String, default: 'ru' } 
 });
 
 

@@ -1,84 +1,102 @@
-// handlers/bmi.ts
 import { Composer, Context, InlineKeyboard } from "grammy";
+import { t } from "../locales";
+import { UserModel } from "../db/models";
 
 export const bmiHandler = new Composer<Context>();
 
-// Простейшее хранилище состояний в памяти
-// Ключ: ID пользователя, Значение: шаг (вес/рост) и сохраненный вес
-const userSteps = new Map<number, { step: string, weight?: number }>();
+// Хранилище: ID пользователя -> шаг, сохраненный вес и язык
+type BmiState = {
+    step: string;
+    weight?: number;
+    lang: 'ru' | 'uz' | 'kz';
+};
+
+const userSteps = new Map<number, BmiState>();
 
 bmiHandler.callbackQuery("start_bmi", async (ctx) => {
     await ctx.answerCallbackQuery();
     const userId = ctx.from.id;
-    
-    userSteps.set(userId, { step: "WAITING_WEIGHT" });
+    let lang: 'ru' | 'uz' | 'kz' = 'ru';
 
-    await ctx.reply(
-        "⚖️ **Калькулятор Индекса Массы Тела (ИМТ)**\n\n" +
-        "Давайте проверим, в норме ли ваш вес. Отправьте мне ваш **текущий вес в килограммах** (например: 75):",
-        { parse_mode: "Markdown" }
-    );
+    // Достаем язык из БД один раз при старте калькулятора
+    try {
+        const user = await UserModel.findOne({ telegramId: userId });
+        if (user && user.language) lang = user.language as 'ru' | 'uz' | 'kz';
+    } catch (e) {
+        console.error(e);
+    }
+    
+    // Сохраняем язык во временную память вместе с шагом
+    userSteps.set(userId, { step: "WAITING_WEIGHT", lang });
+
+    await ctx.reply(t(lang, 'bmi_start_title'), { parse_mode: "Markdown" });
 });
 
-// Обработка текстовых сообщений для ИМТ
+// Обработка текстовых сообщений
 bmiHandler.on("message:text", async (ctx, next) => {
     const userId = ctx.from.id;
     const state = userSteps.get(userId);
 
-    // Если пользователь не в процессе калькулятора, пропускаем дальше
+    // Если пользователь не в калькуляторе, пропускаем
     if (!state) return next();
 
+    const lang = state.lang;
     const input = parseFloat(ctx.message.text.replace(',', '.'));
 
     if (isNaN(input) || input <= 0) {
-        return ctx.reply("⚠️ Пожалуйста, введите корректное число (например: 75 или 170).");
+        return ctx.reply(t(lang, 'bmi_err_num'));
     }
 
     if (state.step === "WAITING_WEIGHT") {
-        if (input < 30 || input > 300) return ctx.reply("⚠️ Указан нереалистичный вес. Попробуйте снова:");
+        if (input < 30 || input > 300) return ctx.reply(t(lang, 'bmi_err_weight'));
         
-        userSteps.set(userId, { step: "WAITING_HEIGHT", weight: input });
-        await ctx.reply("✅ Принято. Теперь отправьте ваш **рост в сантиметрах** (например: 175):");
+        userSteps.set(userId, { step: "WAITING_HEIGHT", weight: input, lang });
+        await ctx.reply(t(lang, 'bmi_ask_height'), { parse_mode: "Markdown" });
         
     } else if (state.step === "WAITING_HEIGHT") {
-        if (input < 100 || input > 250) return ctx.reply("⚠️ Указан нереалистичный рост. Попробуйте снова (в сантиметрах):");
+        if (input < 100 || input > 250) return ctx.reply(t(lang, 'bmi_err_height'));
 
         const weight = state.weight!;
         const heightMeters = input / 100;
         
-        // Формула ИМТ: вес / (рост в метрах в квадрате)
         const bmi = +(weight / (heightMeters * heightMeters)).toFixed(1);
         
-        // Очищаем состояние пользователя
+        // Очищаем состояние
         userSteps.delete(userId);
 
-        let verdict = "";
-        let advice = "";
+        let verdictKey: "bmi_verdict_under" | "bmi_verdict_normal" | "bmi_verdict_over" | "bmi_verdict_obese";
+        let adviceKey: "bmi_advice_under" | "bmi_advice_normal" | "bmi_advice_over" | "bmi_advice_obese";
 
         if (bmi < 18.5) {
-            verdict = "Недостаточная масса тела 📉";
-            advice = "Вам может не хватать нутриентов. В клинике мы поможем нормализовать работу ЖКТ для лучшего усвоения пищи.";
+            verdictKey = "bmi_verdict_under";
+            adviceKey = "bmi_advice_under";
         } else if (bmi >= 18.5 && bmi < 24.9) {
-            verdict = "Норма! Вы молодец 🍏";
-            advice = "Поддерживайте форму! Детокс 1-2 раза в год поможет сохранить этот результат надолго.";
+            verdictKey = "bmi_verdict_normal";
+            adviceKey = "bmi_advice_normal";
         } else if (bmi >= 25 && bmi < 29.9) {
-            verdict = "Избыточная масса тела ⚠️";
-            advice = "Пора обратить внимание на питание. Лечебное голодание и очищение печени в нашей клинике помогут запустить метаболизм.";
+            verdictKey = "bmi_verdict_over";
+            adviceKey = "bmi_advice_over";
         } else {
-            verdict = "Ожирение 🚨";
-            advice = "Лишний вес — сильная нагрузка на суставы и сердце. В Orzu Medical мы комплексно лечим жировой гепатоз печени и помогаем безопасно снизить вес под контролем врачей.";
+            verdictKey = "bmi_verdict_obese";
+            adviceKey = "bmi_advice_obese";
         }
 
-        const kb = new InlineKeyboard()
-            .text("📞 Узнать о программах похудения", "contact_operator").row()
-            .text("🔙 В меню", "back_main");
+        const verdict = t(lang, verdictKey);
+        const advice = t(lang, adviceKey);
 
-        // Прикрепляем диаграмму для наглядности (бот сам подгрузит картинку)
+        const kb = new InlineKeyboard()
+            .text(t(lang, 'btn_weight_programs'), "contact_operator").row()
+            .text(t(lang, 'btn_back_menu'), "back_main");
+
+        const resultText = t(lang, 'bmi_result', {
+            bmi: bmi.toString(),
+            verdict: verdict,
+            advice: advice
+        });
+
+        // Добавим диаграмму 
         await ctx.reply(
-            `📊 **Ваш ИМТ: ${bmi}**\n` +
-            `**Статус:** ${verdict}\n\n` +
-            `👨‍⚕️ **Рекомендация:** ${advice}\n\n` +
-            ``, 
+            `${resultText}\n\n`, 
             { reply_markup: kb, parse_mode: "Markdown" }
         );
     }

@@ -1,27 +1,65 @@
 import { InlineKeyboard } from "grammy";
 import { BotAction } from "../types/enums";
+import { t } from "../locales";
 
-// Главное меню
-export const mainKeyboard = new InlineKeyboard()
-    .text("🏥 О клинике и Методика", BotAction.ABOUT).row()
-    .text("💰 Актуальный Прайс-лист", BotAction.PRICES).row()
-    .text("📍 Филиалы и Адреса", BotAction.CONTACTS).row()
-    .text("❓ Частые вопросы и Услуги", BotAction.FAQ).row()
-    .text("🩺 Тест: Пора ли в санаторий?", "start_checkup").row() // НОВАЯ КНОПКА
-    .text("⚖️ Калькулятор ИМТ", "start_bmi").row()              // НОВАЯ КНОПКА
-    .text("📞 Связаться с оператором", "contact_operator").row()
-    .url("🌐 Наш сайт", "https://orzumedical.uz")
-    .url("📚 Читать книгу онлайн", "https://orzu-medical-electron-book.vercel.app/");
+// Добавили параметр lang
+export const generateMainKeyboard = (
+  isSubscribed: boolean,
+  lang: "ru" | "uz" | "kz",
+) => {
+  const kb = new InlineKeyboard()
+    .text(t(lang, "btn_about"), BotAction.ABOUT)
+    .row()
+    .text(t(lang, "btn_prices"), BotAction.PRICES)
+    .row()
+    .text(t(lang, "btn_contacts"), BotAction.CONTACTS)
+    .row()
+    .text(t(lang, "btn_faq"), BotAction.FAQ)
+    .row()
+    .text(t(lang, "btn_checkup"), "start_checkup")
+    .row()
+    .text(t(lang, "btn_bmi"), "start_bmi")
+    .row();
+
+  if (isSubscribed) {
+    kb.text(t(lang, "btn_unsub_diary"), "unsubscribe_diary").row();
+  } else {
+    kb.text(t(lang, "btn_sub_diary"), "subscribe_diary").row();
+  }
+
+  kb.text(t(lang, "btn_operator"), "contact_operator")
+    .row()
+    .url(t(lang, "btn_site"), "https://orzumedical.uz");
+
+  return kb;
+};
+
+// Клавиатура выбора языка
+export const langKeyboard = new InlineKeyboard()
+  .text("🇷🇺 Русский", "set_lang_ru")
+  .row()
+  .text("🇺🇿 Ўзбек тили", "set_lang_uz")
+  .row()
+  .text("🇰🇿 Қазақ тілі", "set_lang_kz");
 
 // Меню FAQ
-export const faqKeyboard = new InlineKeyboard()
-    .text("📋 Что входит в стоимость?", "faq_included").row() // Новый пункт из фото
-    .text("📅 Сколько длится курс?", "faq_duration").row()
-    .text("💊 Что мы лечим?", "faq_diseases").row()
-    .text("📞 Записаться на лечение", "contact_operator").row() // Всегда ведем к продаже
-    .text("🔙 Назад", "back_main");
+export const generateFaqKeyboard = (lang: "ru" | "uz" | "kz") => {
+  return new InlineKeyboard()
+    .text(t(lang, "btn_faq_included"), "faq_included")
+    .row()
+    .text(t(lang, "btn_faq_duration"), "faq_duration")
+    .row()
+    .text(t(lang, "btn_faq_diseases"), "faq_diseases")
+    .row()
+    .text(t(lang, "btn_faq_book"), "contact_operator")
+    .row() // Кнопка записи (лид)
+    .text(t(lang, "btn_back_menu"), "back_main");
+};
 
 // Универсальная кнопка назад + оператор
-export const backKeyboard = new InlineKeyboard()
-    .text("📞 Задать вопрос оператору", "contact_operator").row()
-    .text("🔙 Назад в меню", "back_main");
+export const generateBackKeyboard = (lang: "ru" | "uz" | "kz") => {
+  return new InlineKeyboard()
+    .text(t(lang, "btn_ask_operator"), "contact_operator")
+    .row()
+    .text(t(lang, "btn_back_menu"), "back_main");
+};
