@@ -14,11 +14,12 @@ type BmiState = {
 const userSteps = new Map<number, BmiState>();
 
 bmiHandler.callbackQuery("start_bmi", async (ctx) => {
-    await ctx.answerCallbackQuery();
+    await ctx.answerCallbackQuery().catch(() => {});
+    
     const userId = ctx.from.id;
     let lang: 'ru' | 'uz' | 'kz' = 'ru';
 
-    // Достаем язык из БД один раз при старте калькулятора
+    // 2. Только теперь идем в базу данных
     try {
         const user = await UserModel.findOne({ telegramId: userId });
         if (user && user.language) lang = user.language as 'ru' | 'uz' | 'kz';
@@ -26,7 +27,6 @@ bmiHandler.callbackQuery("start_bmi", async (ctx) => {
         console.error(e);
     }
     
-    // Сохраняем язык во временную память вместе с шагом
     userSteps.set(userId, { step: "WAITING_WEIGHT", lang });
 
     await ctx.reply(t(lang, 'bmi_start_title'), { parse_mode: "Markdown" });
