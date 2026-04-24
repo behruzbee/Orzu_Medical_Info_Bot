@@ -11,7 +11,7 @@ export const TARGET_GROUPS = [
     { id: -5245736497, name: "SMM LID Parkent", limit: 60 },
     { id: -5169110427, name: "SMM LID Yangi bozor", limit: 40 },
     { id: -5267950580, name: "SMM LID Юнусабад", limit: 40 },
-    { id: -5166082133, name: "SMM LID Nasima bonu", limit: 0 },
+    // { id: -5166082133, name: "SMM LID Nasima bonu", limit: 0 },
     // { id: -5101616619, name: "SMM LID Fotima Sulton", limit: 15 },
     // { id: -5192989576, name: "SMM LID Oqqurg'on", limit: 0 },
 ];
