@@ -8,7 +8,7 @@ export enum BotAction {
 }
 
 export enum BranchName {
-    NASIBA = "branch_nasiba",
+    NASIMA = "branch_nasima",
     YUNUSOBOD = "branch_yunusobod",
     AKKURGAN = "branch_akkurgan",
     YANGIBOZOR = "branch_yangibozor",
