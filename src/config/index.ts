@@ -7,10 +7,10 @@ if (!process.env.rayxona_MONGODB_URI) throw new Error("❌ rayxona_MONGODB_URI i
 const sourceGroupId = Number(process.env.SOURCE_GROUP_ID);
 
 export const TARGET_GROUPS = [
-    { id: -5224230350, name: "SMM LID HEAD OFFICE", limit: 30 },
+    { id: -5224230350, name: "SMM LID HEAD OFFICE", limit: 40 },
     // { id: -5245736497, name: "SMM LID PARKENT", limit: 60 },
-    { id: -5169110427, name: "SMM LID YANGIBOZOR", limit: 30 },
-    { id: -5267950580, name: "SMM LID YUNUSOBOD", limit: 30 },
+    { id: -5169110427, name: "SMM LID YANGIBOZOR", limit: 40 },
+    { id: -5267950580, name: "SMM LID YUNUSOBOD", limit: 40 },
     // { id: -5166082133, name: "SMM LID Nasima bonu", limit: 0 },
     // { id: -5101616619, name: "SMM LID Fotima Sulton", limit: 15 },
     // { id: -5192989576, name: "SMM LID Oqqurg'on", limit: 0 },
